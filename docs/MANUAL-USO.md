@@ -332,3 +332,13 @@ Ejecutar en orden:
 ```bash
 ./pre-backup-db.sh && ./copia-segura.sh --config bd.conf
 ```
+
+---
+
+## Créditos
+
+**Versión**: v1.0.0
+
+Desarrollado para **PáginaVIVA** — Potenciamos tu estrategia comercial con IA y automatizaciones clave de procesos operativos y visibilidad orgánica en posicionamiento multicanal.
+
+[Web](https://www.paginaviva.net/) · [GitHub](https://github.com/paginaviva)

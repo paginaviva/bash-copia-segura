@@ -56,4 +56,14 @@ cd bash-copia-segura
 bash test.sh
 ```
 
-Todos los tests deben pasar con 0 errores.
+Todos los tests deben pasar con 0 errores (actualmente **61/61 tests**).
+
+---
+
+## Créditos
+
+**Versión**: v1.0.0
+
+Desarrollado para **PáginaVIVA** — Potenciamos tu estrategia comercial con IA y automatizaciones clave de procesos operativos y visibilidad orgánica en posicionamiento multicanal.
+
+[Web](https://www.paginaviva.net/) · [GitHub](https://github.com/paginaviva)

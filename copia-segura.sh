@@ -20,8 +20,33 @@ NC='\033[0m'
 DRY_RUN=false
 SELECTED_CONFIG=""
 
+# ---- Method configuration maps (Bash 4+ associative arrays) ----
+declare -A EXT_FOR_METHOD=(
+    [tar]=".tar.gz"
+    [zip]=".zip"
+    [7z]=".7z"
+    [rsync]=""
+)
+declare -A VERIFY_CMD_FOR_METHOD=(
+    [tar]="tar -tzf"
+    [zip]="unzip -t"
+    [7z]="7z t"
+)
+declare -A EXCLUDE_FMT_FOR_TOOL=(
+    [tar]="--exclude=%s"
+    [zip]="-x %s"
+    [7z]="-xr!%s"
+    [rsync]="--exclude=%s"
+)
+declare -A PATTERN_FOR_METHOD=(
+    [tar]="*.tar.gz"
+    [zip]="*.zip"
+    [7z]="*.7z"
+    [rsync]="*"
+)
+
 # ---- Helpers ----
-timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
+timestamp() { echo "${BACKUP_DATE} ${BACKUP_DATETIME:11}"; }
 
 log() {
     local level="$1"
@@ -100,8 +125,16 @@ else
     echo "Using configuration: $(basename "$CONFIG_FILE")"
 fi
 
-# ---- Load config ----
-source "$CONFIG_FILE"
+# ---- Load config (safe parser) ----
+parse_config() {
+    local file="$1"
+    while IFS='=' read -r key val; do
+        [[ "$key" =~ ^[A-Z_]+$ ]] || continue
+        val="${val#\"}"; val="${val%\"}"
+        declare -g "$key=$val"
+    done < <(grep -E '^[A-Z_]+=' "$file" 2>/dev/null)
+}
+parse_config "$CONFIG_FILE"
 
 # ---- Apply defaults ----
 METHOD="${METHOD:-tar}"
@@ -115,9 +148,13 @@ REMOTE_OPTS="${REMOTE_OPTS:-}"
 REMOTE_DELETE_SOURCE="${REMOTE_DELETE_SOURCE:-false}"
 EXCLUDE_PATTERNS="${EXCLUDE_PATTERNS:-}"
 
+# ---- Cache date (single evaluation at start) ----
+BACKUP_DATE=$(date +"%Y-%m-%d")
+BACKUP_DATETIME=$(date +"%Y-%m-%d_%H-%M-%S")
+
 # ---- Setup log ----
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/backup_$(date +%Y-%m-%d).log"
+LOG_FILE="$LOG_DIR/backup_${BACKUP_DATE}.log"
 
 # ---- Validate METHOD ----
 VALID_METHODS=("tar" "zip" "7z" "rsync")
@@ -144,12 +181,9 @@ fi
 # ---- Check required commands ----
 check_deps() {
     local missing=()
-    case "$METHOD" in
-        tar) command -v tar >/dev/null 2>&1 || missing+=("tar") ;;
-        zip) command -v zip >/dev/null 2>&1 || missing+=("zip") ;;
-        7z)  command -v 7z  >/dev/null 2>&1 || missing+=("7z (p7zip-full)") ;;
-        rsync) command -v rsync >/dev/null 2>&1 || missing+=("rsync") ;;
-    esac
+    if ! command -v "$METHOD" >/dev/null 2>&1; then
+        [ "$METHOD" = "7z" ] && missing+=("7z (p7zip-full)") || missing+=("$METHOD")
+    fi
     if [ "$REMOTE_ENABLED" = "true" ]; then
         command -v rclone >/dev/null 2>&1 || missing+=("rclone")
     fi
@@ -181,14 +215,8 @@ check_disk_space() {
 archive_name() {
     local src_name
     src_name=$(basename "$SOURCE")
-    local date_str
-    date_str=$(date +"%Y-%m-%d_%H-%M-%S")
-    case "$METHOD" in
-        tar) echo "${src_name}_${date_str}.tar.gz" ;;
-        zip) echo "${src_name}_${date_str}.zip" ;;
-        7z)  echo "${src_name}_${date_str}.7z" ;;
-        *)   echo "${src_name}_${date_str}.tar.gz" ;;
-    esac
+    local ext="${EXT_FOR_METHOD[$METHOD]:-.tar.gz}"
+    echo "${src_name}_${BACKUP_DATETIME}${ext}"
 }
 
 # ---- Build exclude flags ----
@@ -199,15 +227,37 @@ build_excludes() {
         echo "$result"
         return
     fi
+    local fmt="${EXCLUDE_FMT_FOR_TOOL[$tool]:---exclude=%s}"
     for pattern in $EXCLUDE_PATTERNS; do
-        case "$tool" in
-            tar)   result="$result --exclude=$pattern" ;;
-            zip)   result="$result -x $pattern" ;;
-            7z)    result="$result -xr!$pattern" ;;
-            rsync) result="$result --exclude=$pattern" ;;
-        esac
+        printf -v arg -- "$fmt" "$pattern"
+        result="$result $arg"
     done
     echo "$result"
+}
+
+# ---- Shared compression helper ----
+run_compression() {
+    local tool="$1" cmd="$2"
+    local dest_dir="$ARCHIVE_FOLDER"
+    local fname
+    fname=$(archive_name)
+    local excl
+    excl=$(build_excludes "$tool")
+    mkdir -p "$dest_dir"
+    log_info "Compressing with $tool: $SOURCE -> $dest_dir/$fname"
+    if [ "$DRY_RUN" = false ]; then
+        eval "$cmd" 2>>"$LOG_FILE"
+        if [ $? -eq 0 ]; then
+            local size
+            size=$(du -sh "$dest_dir/$fname" | cut -f1)
+            log_ok "Backup created: $fname ($size)"
+        else
+            log_error "$tool compression failed!"
+            return 1
+        fi
+    else
+        log_info "[DRY-RUN] Would run: $cmd"
+    fi
 }
 
 # ---- Phase 1 & 2: Backup execution ----
@@ -216,73 +266,24 @@ run_backup() {
     local excl
 
     case "$METHOD" in
-        tar)
-            dest_dir="$ARCHIVE_FOLDER"
-            mkdir -p "$dest_dir"
-            local fname
-            fname=$(archive_name)
-            excl=$(build_excludes "tar")
-            log_info "Compressing with tar: $SOURCE -> $dest_dir/$fname"
-            if [ "$DRY_RUN" = false ]; then
-                # shellcheck disable=SC2086
-                tar -czf "$dest_dir/$fname" $excl -C "$(dirname "$SOURCE")" "$(basename "$SOURCE")" 2>>"$LOG_FILE"
-                if [ $? -eq 0 ]; then
-                    local size
-                    size=$(du -sh "$dest_dir/$fname" | cut -f1)
-                    log_ok "Backup created: $fname ($size)"
-                else
-                    log_error "tar compression failed!"
-                    return 1
-                fi
-            else
-                log_info "[DRY-RUN] Would run: tar -czf $dest_dir/$fname $excl $SOURCE"
-            fi
-            ;;
-
-        zip)
-            dest_dir="$ARCHIVE_FOLDER"
-            mkdir -p "$dest_dir"
-            local fname
-            fname=$(archive_name)
-            excl=$(build_excludes "zip")
-            log_info "Compressing with zip: $SOURCE -> $dest_dir/$fname"
-            if [ "$DRY_RUN" = false ]; then
-                # shellcheck disable=SC2086
-                (cd "$(dirname "$SOURCE")" && zip -r "$dest_dir/$fname" "$(basename "$SOURCE")" $excl) 2>>"$LOG_FILE"
-                if [ $? -eq 0 ]; then
-                    local size
-                    size=$(du -sh "$dest_dir/$fname" | cut -f1)
-                    log_ok "Backup created: $fname ($size)"
-                else
-                    log_error "zip compression failed!"
-                    return 1
-                fi
-            else
-                log_info "[DRY-RUN] Would run: zip -r $dest_dir/$fname $excl $SOURCE"
-            fi
-            ;;
-
-        7z)
-            dest_dir="$ARCHIVE_FOLDER"
-            mkdir -p "$dest_dir"
-            local fname
-            fname=$(archive_name)
-            excl=$(build_excludes "7z")
-            log_info "Compressing with 7z: $SOURCE -> $dest_dir/$fname"
-            if [ "$DRY_RUN" = false ]; then
-                # shellcheck disable=SC2086
-                7z a -t7z "$dest_dir/$fname" "$SOURCE" $excl >>"$LOG_FILE" 2>&1
-                if [ $? -eq 0 ]; then
-                    local size
-                    size=$(du -sh "$dest_dir/$fname" | cut -f1)
-                    log_ok "Backup created: $fname ($size)"
-                else
-                    log_error "7z compression failed!"
-                    return 1
-                fi
-            else
-                log_info "[DRY-RUN] Would run: 7z a -t7z $dest_dir/$fname $SOURCE $excl"
-            fi
+        tar|zip|7z)
+            local tool="$METHOD"
+            local src_dir; src_dir=$(dirname "$SOURCE")
+            local src_base; src_base=$(basename "$SOURCE")
+            local dest_dir="$ARCHIVE_FOLDER"
+            local fname; fname=$(archive_name)
+            local excl; excl=$(build_excludes "$tool")
+            case "$tool" in
+                tar)
+                    run_compression "tar" "tar -czf \"$dest_dir/$fname\" $excl -C \"$src_dir\" \"$src_base\""
+                    ;;
+                zip)
+                    run_compression "zip" "(cd \"$src_dir\" && zip -r \"$dest_dir/$fname\" \"$src_base\" $excl)"
+                    ;;
+                7z)
+                    run_compression "7z" "7z a -t7z \"$dest_dir/$fname\" \"$SOURCE\" $excl >>\"$LOG_FILE\" 2>&1"
+                    ;;
+            esac
             ;;
 
         rsync)
@@ -305,9 +306,7 @@ run_backup() {
                         mkdir -p "$ARCHIVE_FOLDER"
                         local src_name
                         src_name=$(basename "$SOURCE")
-                        local date_str
-                        date_str=$(date +"%Y-%m-%d_%H-%M-%S")
-                        local fname="${src_name}_${date_str}.tar.gz"
+                        local fname="${src_name}_${BACKUP_DATETIME}.tar.gz"
                         log_info "Compressing rsync target into archive: $fname"
                         tar -czf "$ARCHIVE_FOLDER/$fname" -C "$dest_dir" . 2>>"$LOG_FILE"
                         if [ $? -eq 0 ]; then
@@ -340,29 +339,23 @@ verify_backup() {
     if [ -z "$ARCHIVE_FOLDER" ]; then
         return 0
     fi
-    latest=$(ls -t "$ARCHIVE_FOLDER"/*."${METHOD#rsync}"* 2>/dev/null | head -1)
-    [ -z "$latest" ] && latest=$(ls -t "$ARCHIVE_FOLDER"/*.tar.gz "$ARCHIVE_FOLDER"/*.zip "$ARCHIVE_FOLDER"/*.7z 2>/dev/null | head -1)
+    latest=$(find "$ARCHIVE_FOLDER" -maxdepth 1 -name "*.${EXT_FOR_METHOD[$METHOD]#.}" -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    [ -z "$latest" ] && latest=$(find "$ARCHIVE_FOLDER" -maxdepth 1 \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.7z' \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     if [ -z "$latest" ]; then
         log_warn "No backup file found to verify."
         return 0
     fi
     log_info "Verifying integrity of: $(basename "$latest")"
     local ok=true
-    case "$METHOD" in
-        tar)
-            tar -tzf "$latest" &>/dev/null || ok=false
-            ;;
-        zip)
-            unzip -t "$latest" >/dev/null 2>&1 || ok=false
-            ;;
-        7z)
-            7z t "$latest" >/dev/null 2>&1 || ok=false
-            ;;
-    esac
+    local verify_cmd="${VERIFY_CMD_FOR_METHOD[$METHOD]}"
+    if [ -n "$verify_cmd" ]; then
+        $verify_cmd "$latest" >/dev/null 2>&1 || ok=false
+    fi
     if [ "$ok" = true ]; then
         log_ok "Integrity check PASSED: $(basename "$latest")"
     else
         log_error "Integrity check FAILED: $(basename "$latest") may be corrupt!"
+        return 1
     fi
 }
 
@@ -383,12 +376,7 @@ rotate_backups() {
         if [ -z "$target_dir" ]; then
             return
         fi
-        case "$METHOD" in
-            tar) pattern="*.tar.gz" ;;
-            zip) pattern="*.zip" ;;
-            7z)  pattern="*.7z" ;;
-            *)   pattern="*" ;;
-        esac
+        pattern="${PATTERN_FOR_METHOD[$METHOD]:-*}"
     fi
 
     log_info "Rotating backups older than ${RETENTION_DAYS} days in $target_dir..."
@@ -425,13 +413,25 @@ remote_upload() {
         return 0
     fi
     log_info "Uploading to remote: $src_path -> $REMOTE_DEST"
+    # Sanitize REMOTE_OPTS against a whitelist of known safe rclone flags
+    local safe_opts=""
+    for opt in $REMOTE_OPTS; do
+        case "$opt" in
+            --verbose|--progress|--bwlimit=*|--delete-excluded|--dry-run)
+                safe_opts="$safe_opts $opt" ;;
+        esac
+    done
     # shellcheck disable=SC2086
-    rclone copy "$src_path" "$REMOTE_DEST" $REMOTE_OPTS >>"$LOG_FILE" 2>&1
+    rclone copy "$src_path" "$REMOTE_DEST" $safe_opts >>"$LOG_FILE" 2>&1
     if [ $? -eq 0 ]; then
         log_ok "Remote upload completed successfully"
         if [ "$REMOTE_DELETE_SOURCE" = "true" ]; then
             log_info "REMOTE_DELETE_SOURCE is enabled. Removing local backup files..."
-            rm -rf "$src_path"/*
+            if [ -z "$src_path" ] || [ "$src_path" = "/" ]; then
+                log_error "Invalid source path '$src_path' — refusing to rm -rf!"
+                return 1
+            fi
+            rm -rf "${src_path:?}"/*
             log_ok "Local backup files removed from $src_path"
         fi
     else
@@ -509,7 +509,7 @@ main() {
     run_backup || exit 1
 
     # Phase 4: Verify integrity
-    verify_backup
+    verify_backup || exit 1
 
     # Phase 4: Rotate old backups
     rotate_backups
