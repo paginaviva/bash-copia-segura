@@ -2,6 +2,10 @@
 
 **Herramienta de copias de seguridad en Bash** con soporte para múltiples métodos de compresión (tar, zip, 7z, rsync) y subida a servidores externos mediante rclone.
 
+![Tests](https://img.shields.io/badge/tests-61%2F61%20passed-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Bash](https://img.shields.io/badge/language-Bash-4EAA25)
+
 ---
 
 ## Características
@@ -15,6 +19,8 @@
 - **Modo dry-run** para simular sin crear archivos
 - **Logging** detallado con timestamp
 - **Código 100% Bash**, sin dependencias externas más allá de las herramientas de sistema
+- **Parser seguro** de archivos .conf (sin `source` directo)
+- **Validación de rutas** antes de operaciones destructivas
 
 ---
 
@@ -26,6 +32,17 @@
 | `zip` | `.zip` | deflate | Compatibilidad con Windows, portabilidad |
 | `7z` | `.7z` | LZMA2 | Máxima compresión, archivos grandes |
 | `rsync` | — | incremental | Backups frecuentes, solo cambios |
+
+---
+
+## Estado del proyecto
+
+| Indicador | Valor |
+|-----------|-------|
+| **Versión** | v1.0.0 |
+| **Tests** | 61/61 passed |
+| **Líneas de código** | ~530 (script) + ~470 (tests) |
+| **Licencia** | MIT |
 
 ---
 
@@ -55,6 +72,16 @@ bash test.sh
 
 ---
 
+## Optimizaciones de seguridad incluidas
+
+- **Parser seguro de .conf**: reemplaza `source` por lectura línea por línea con validación de formato `CLAVE=valor`
+- **Guard en `rm -rf`**: valida que la ruta no esté vacía ni sea `/` antes de eliminar
+- **Whitelist de flags rclone**: solo flags permitidos (`--verbose`, `--progress`, `--bwlimit`, etc.)
+- **verify_backup bloqueante**: si la verificación de integridad falla, el script se detiene (no sube backups corruptos)
+- **Caché de fecha**: reduce subprocesos calculando `date` una sola vez por ejecución
+
+---
+
 ## Documentación
 
 - [Guía de instalación](docs/INSTALACION.md)
@@ -65,3 +92,11 @@ bash test.sh
 ## Licencia
 
 MIT
+
+---
+
+## Créditos
+
+Desarrollado para **PáginaVIVA** — Potenciamos tu estrategia comercial con IA y automatizaciones clave de procesos operativos y visibilidad orgánica en posicionamiento multicanal.
+
+[Web](https://www.paginaviva.net/) · [GitHub](https://github.com/paginaviva)
