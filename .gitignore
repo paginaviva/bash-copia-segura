@@ -1,0 +1,16 @@
+# Agent handover files (generated, not part of the project)
+AGENTS.md
+.opencode/
+
+# Runtime logs
+logs/
+
+# User personal directory
+yousuario/
+
+# Temporary test artifacts
+backup-test/
+
+# OS files
+.DS_Store
+Thumbs.db
