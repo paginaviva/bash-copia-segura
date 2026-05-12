@@ -21,7 +21,7 @@ bash-copia-segura/
 ├── copia-segura.sh        # Script principal
 ├── configs/               # Carpeta de configuraciones
 │   ├── example.conf       # Plantilla con todas las variables
-│   └── desarrollo.conf    # Ejemplo para workspace de desarrollo
+│   └── desarrollo-en-curso.conf    # Ejemplo para workspace de desarrollo
 ├── logs/                  # Logs de ejecución (se crea automáticamente)
 │   └── backup_YYYY-MM-DD.log
 ├── test.sh                # Suite de pruebas
@@ -99,14 +99,14 @@ RETENTION_DAYS=30
 Si hay un solo `.conf`:
 
 ```
-Only one configuration found. Using: desarrollo.conf
+Only one configuration found. Using: desarrollo-en-curso.conf
 ```
 
 Si hay varios:
 
 ```
 Available backup configurations:
-  [0] desarrollo.conf
+  [0] desarrollo-en-curso.conf
   [1] servidor-web.conf
   [2] fotos.conf
 Select a configuration to run (number):
@@ -115,13 +115,13 @@ Select a configuration to run (number):
 ### Modo no interactivo (para cron)
 
 ```bash
-./copia-segura.sh --config desarrollo.conf
+./copia-segura.sh --config desarrollo-en-curso.conf
 ```
 
 ### Modo simulación (dry-run)
 
 ```bash
-./copia-segura.sh --dry-run --config desarrollo.conf
+./copia-segura.sh --dry-run --config desarrollo-en-curso.conf
 ```
 
 Muestra lo que se haría sin crear ningún archivo.
@@ -266,10 +266,10 @@ Para rsync se aplica sobre todos los archivos en `BACKUP_FOLDER`. Para tar/zip/7
 crontab -e
 
 # Ejecutar cada día a las 2:00 AM
-0 2 * * * /ruta/completa/bash-copia-segura/copia-segura.sh --config desarrollo.conf
+0 2 * * * /ruta/completa/bash-copia-segura/copia-segura.sh --config desarrollo-en-curso.conf
 
 # Ejecutar cada 6 horas
-0 */6 * * * /ruta/completa/bash-copia-segura/copia-segura.sh --config desarrollo.conf
+0 */6 * * * /ruta/completa/bash-copia-segura/copia-segura.sh --config desarrollo-en-curso.conf
 ```
 
 **Nota:** Usa siempre rutas absolutas en crontab.

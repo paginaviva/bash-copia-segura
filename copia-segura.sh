@@ -112,6 +112,7 @@ RETENTION_DAYS="${RETENTION_DAYS:-7}"
 REMOTE_ENABLED="${REMOTE_ENABLED:-false}"
 REMOTE_DEST="${REMOTE_DEST:-}"
 REMOTE_OPTS="${REMOTE_OPTS:-}"
+REMOTE_DELETE_SOURCE="${REMOTE_DELETE_SOURCE:-false}"
 EXCLUDE_PATTERNS="${EXCLUDE_PATTERNS:-}"
 
 # ---- Setup log ----
@@ -428,6 +429,11 @@ remote_upload() {
     rclone copy "$src_path" "$REMOTE_DEST" $REMOTE_OPTS >>"$LOG_FILE" 2>&1
     if [ $? -eq 0 ]; then
         log_ok "Remote upload completed successfully"
+        if [ "$REMOTE_DELETE_SOURCE" = "true" ]; then
+            log_info "REMOTE_DELETE_SOURCE is enabled. Removing local backup files..."
+            rm -rf "$src_path"/*
+            log_ok "Local backup files removed from $src_path"
+        fi
     else
         log_error "Remote upload FAILED. Local backup is preserved."
     fi
