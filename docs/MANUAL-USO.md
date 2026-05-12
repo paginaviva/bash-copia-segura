@@ -339,6 +339,6 @@ Ejecutar en orden:
 
 **Versión**: v1.0.0
 
-Desarrollado para **PáginaVIVA** — Potenciamos tu estrategia comercial con IA y automatizaciones clave de procesos operativos y visibilidad orgánica en posicionamiento multicanal.
+Por **PáginaVIVA**
 
 [Web](https://www.paginaviva.net/) · [GitHub](https://github.com/paginaviva)
